@@ -1,0 +1,61 @@
+Getting the basic Raspberry Pi software up and running has been documented elsewhere, but basically, go to:
+http://www.raspberrypi.org/downloads
+download the latest NOOBS (v1.3.2 as of this writing)
+Format the SD card using the SD card tool at https://www.sdcard.org/downloads/formatter_4/
+Unzip the NOOBS file and put the contents at the root of the SD card.
+Insert the SD card into the Raspberry Pi
+Connect a keyboard, monitor, mouse, and LAN cable to the Raspberry Pi and connect the power supply (when you plug the PoE splitter into the LAN cable, the Raspberry Pi will power up).
+
+Select the Raspian distribution and install it.
+While that's installing, select English-US keyboard, which autoselects US Keymap
+
+On first boot, the raspi-config utility will run.
+Select Console Login as the default on boot
+Change Locale to en_US UTF-8
+Set timezone for your location
+Set keyboard to Generic 105-key, English US
+Enable the camera
+change the hostname to something memorable (I used 'rpithon' for Raspberry Pi Temp/Humid On Net)
+set 16M memory split as we'll be running headless
+Enable SSH
+reboot
+
+Now you can either continue to use the console or ssh to it from another machine.  From my Mac I can just say:
+ssh pi@rpithon
+and log in using the password 'raspberry'.  If your router doesn't do the DNS to help you find 'rpithon' then make note of the IP address on the console and use that instead.
+
+Update everything (this will take a while):
+
+sudo apt-get update
+sudo apt-get upgrade
+sudo rpi-update
+
+and reboot
+
+Since this is going to be a LAN-only device, I get sick of playing "Mother May I?" with sudo, and I want to avoid any permissions problems with the additional software, so let's enable the root user and delete the pi user:
+
+sudo passwd root
+<rootpassword> repeated twice
+exit
+
+log back in as root user (or ssh root@rpithon) using the password selected above
+
+remove pi user:
+
+deluser -remove-home pi
+
+I prefer Emacs, and don't want all the X-Windows stuff, so:
+
+apt-get install emacs23-nox
+
+Tell it to check the disk (SD Card) every time it boots:
+
+tune2fs -c 1 /dev/mmcblk0p6
+
+emacs /etc/ssh/sshd_config
+
+change X11Forwarding to no
+UseDNS no
+ClientAliveInterval 60
+
+service ssh restart

@@ -1,0 +1,151 @@
+So we want to be able to see the graphs we'll be generating (below), so we need to install a LAMP server.
+
+LAMP: /Linux/Apache/MySQL/PHP&Perl
+
+Linux is the operating system you are using (Raspian is a version of Debian, which is one of the common flavors of Linux)
+Apache is the name of the web server software
+MySQL is a SQL (Standard Query Language) database interface.  Databases sound really scary, but they are easy to use for simple things once you get used to them.
+PHP and Perl are programming languages that are commonly used with websites, though we'll be using the Raspberry Pi standard Python for graphing the data and 'creating' the website.
+
+apt-get install apache2  php5 mysql-client mysql-server vsftpd
+
+This takes a while to install.  Midway through it'll ask you for a MySQL password, pick one memorable, I'll use 'password' for this tutorial.
+
+Now you should be able to browse to http://rpithon (or http://<IP ADDRESS> if the DNS doesn't work) and see a demo web page.  Try to edit /var/www/index.html and see if your changes show up when you refresh the webpage.
+
+ez_setup is a Python program that loads some nice addons (think of it as apt-get on steroids)
+
+wget https://bitbucket.org/pypa/setuptools/raw/bootstrap/ez_setup.py
+python ez_setup.py
+
+These next steps install some integration between Python and MySQL:
+
+apt-get install python-mysqldb
+apt-get install libmysqlclient-dev
+easy_install MySQL-python
+
+We'll be using the wonderful, powerful, and free(!) matplotlib for graphing our data, though we won't be using much of its power.
+
+apt-get install libblas-dev liblapack-dev python-dev libatlas-base-dev gfortran python-setuptools python-scipy python-matplotlib
+
+Gordon Henderson has created a wonderful programming interface for the GPIO pins, including some drivers for the esoteric interface that our Temperature/Humidity sensor uses.  See http://wiringpi.com/ for more details.
+
+git clone git://git.drogon.net/wiringPi
+cd wiringPi
+./build
+cd examples
+emacs rht03.c (change the line #define RHT03_PIN 0 to #define RHT03_PIN 7 for the GPIO pin we're using)
+make rht03
+./rht03
+(you should get continuous temperature and humidity readings)
+
+now we know our hardware is working, let's write our own program...
+
+So we have database software, but there's no database, or tables, so let's create them:
+
+Open the MySQL command interface:
+
+mysql -ppassword <-- the mysql password you picked previously
+
+[...]
+
+Create a new database, called Monitoring
+
+mysql> create database Monitoring;
+Query OK, 1 row affected (0.00 sec)
+
+Select that as our current database
+
+mysql> use Monitoring;
+Database changed
+
+Create a single table in the database called TempHumid, which will contain the Unix Epoch (seconds since 1970) and Temperature and Humidity readings
+
+mysql>create table TempHumid (ComputerTime INTEGER UNSIGNED,Temperature DECIMAL(5,1), Humidity DECIMAL(5,1));
+Query OK, 0 rows affected (1.70 sec)
+
+Done with MySQL, exit back to the command prompt.
+
+mysql> exit
+
+Because the timing is tight on the sensor protocol, we're going to use C code to communicate with the sensor and add readings to the database.
+
+So go to the root user's default directory:
+
+cd ~
+
+copy the Makefile (instructions on how to build the code we're going to create)
+
+cp wiringPi/examples/Makefile .
+
+emacs makeFile
+change the two lines below to match this:
+
+INCLUDE = -I/usr/local/include,/usr/include/mysql
+
+LDFLAGS = -L/usr/local/lib,/usr/lib/arm-linux-gnueabihf -lmysqlclient -lpthread -lz -lm -lrt -ldl
+
+Now copy th.c (included here) into your default directory. Change the password on line 68 from "password" to whatever you chose as the MySQL password.
+
+When you compile it:
+
+make th
+
+you'll get a couple of warnings about declarations of exit, but it'll work fine.
+
+Now you can run the program by typing:
+
+./th
+
+It waits for a 60-second interval (minute) to end, then reads the sensor, inserts the time and sensor readings into the database, and loops forever.
+
+Once we have that working properly, we want it to start whenever the Raspberry Pi starts up:
+
+emacs /etc/rc.local
+insert:
+
+/root/th >> /root/th.log &
+
+before the line that reads "exit 0"
+
+reboot and see if th.log grows by one line per minute:
+
+tail -f th.log
+
+You can confirm that the data is getting into the database with:
+
+mysql -ppassword
+use Monitoring;
+select * from TempHumid;
+
+You should get a list of all values in the database.
+
+We're going to use Python for pulling readings out of the database and graph them with matplotlib.  Log in as root.
+
+Set up the directory structure we'll be using:
+mkdir Graph
+cd Graph
+mkdir graphics
+
+copy GraphTH.py into the Graph directory
+Change the password on line 40:
+DBconn = mdb.connect('localhost', 'root', 'password', 'Monitoring')
+to match the MySQL password you set previously.
+You can also set <location_name> on line 81 to match your desired location name
+
+Try running it:
+
+python GraphTH.py
+
+It will get the last 24 hours of readings from the database, reorganize the data, throw out obvious bad data, create a graph of the results, and copy TH.png to /var/www so you should be able to see a new graph time you run GraphTH.py  at http://rpithon/TH.png
+
+Now we want this to run every minute, so:
+export EDITOR=emacs
+crontab -e
+Add the line:
+* * * * * /usr/bin/python /root/Graph/GraphTH.py >> /root/Graph/GraphTH.log
+at the bottom of the file.
+
+Now GraphTH.py should run every minute, and if you update http://rpithon/TH.png (or http://<IP ADDRESS>/TH.png you should see it change about once a minute.
+
+In the example above I covered the sensor with a damp Kleenex while it dried as a test.

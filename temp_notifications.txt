@@ -1,0 +1,183 @@
+My desired changes were:
+
+1. Log and display temp in Fahrenheit
+
+2. Send me an instant message if temp too high
+
+3. Send me an email if temp too high
+
+4. Send me a text message if temp too high
+
+I wanted this to report in Fahrenheit. I did so by adding two lines of code in the th.c file.
+
+change:
+
+strftime (TimeString,64,"%F %T",timeinfo);
+
+printf ("%s Temp: %5.1f, RH: %5.1f%%\n", TimeString, temp / 10.0, rh / 10.0) ;
+
+to:
+
+strftime (TimeString,64,"%F %T",timeinfo);
+
+Ftemp = temp * 90 / 50 + 320; // convert C to F
+
+temp = Ftemp ;
+
+printf ("%s Temp: %5.1f, RH: %5.1f%%\n", TimeString, temp / 10.0, rh / 10.0) ;
+
+The setup for email and text messages were done through the same functionality.
+I setup an email alias on our server to send one message to multiple email addresses to keep the management simple.
+The text message is sent by using [10digit]@vtext.com for my particular case.
+To add the functionality I modified the GraphTH.py script. You will need to install the xmpp and dns modules.
+
+apt-get install python-xmpp python-dns
+
+In the GraphTH.py script after
+
+import numpy
+
+add:
+
+import smtplib
+
+import xmpp
+
+import DNS
+
+# Set default hightemp warning to 0
+
+hightemp = 0
+
+# Database connect variables
+
+dbserv = '[server]'
+
+dbuser = '[user]'
+
+dbpass = '[password]'
+
+dbbase = '[database]'
+
+change:
+
+DBconn = mdb.connect('localhost', 'root', 'password', 'Monitoring')
+
+to:
+
+DBconn = mdb.connect(dbserv, dbuser, dbpass, dbbase)
+
+change:
+
+plt.ylabel('Temp C, RH %%')
+
+to:
+
+plt.ylabel('Temp F, RH %%')
+
+At the end of the script add:
+
+#
+
+# Let's see if it is too hot in the room
+
+#
+
+# open the database connection, read the last <many> seconds of data
+
+DBconn = mdb.connect(dbserv, dbuser, dbpass, dbbase)
+
+cursor = DBconn.cursor()
+
+sql = "select Temperature from TempHumid where ComputerTime >= (unix_timestamp(now())-(60*15)) AND Temperature >= 70.0"
+
+cursor.execute(sql)
+
+for row in cursor:
+
+hightemp = hightemp + 1
+
+#
+
+# Parts for sending an IM on warning
+
+#
+
+if hightemp > 1:
+
+im_user = '[user]'
+
+im_pass = '[password]'
+
+im_msg = 'Server room temperature higher than 70.0 degrees 2 or more times in the last 15 minutes!!!'
+
+im_recipient = '[recipient]'
+
+jid=xmpp.protocol.JID(im_user)
+
+cl=xmpp.Client(jid.getDomain(),debug=[])
+
+if cl.connect() == "":
+
+print "not connected"
+
+sys.exit(0)
+
+if cl.auth(jid.getNode(),im_pass) == None:
+
+print "authentication failed"
+
+sys.exit(0)
+
+cl.send(xmpp.protocol.Message(im_recipient,im_msg))
+
+cl.disconnect()
+
+#
+
+# Parts for email sending functions
+
+#
+
+if hightemp > 1:
+
+srv_email = '[server]'
+
+snd_email = '[sender]'
+
+pwd_email = '[password]'
+
+rcv_email = '[recipient]'
+
+from email.mime.multipart import MIMEMultipart
+
+from email.mime.text import MIMEText
+
+msg = MIMEMultipart('alternative')
+
+msg['Subject'] = "Server Closet Temperature Warning"
+
+msg['From'] = snd_email
+
+msg['To'] = rcv_email
+
+text = "Temperature above 70.0 degrees more than 2 times in the last 15 minutes!!!"
+
+part1 = MIMEText(text, 'plain')
+
+msg.attach(part1)
+
+server = smtplib.SMTP(srv_email)
+
+server.set_debuglevel(1)
+
+server.login(snd_email,pwd_email)
+
+server.sendmail(snd_email, rcv_email, msg.as_string())
+
+server.quit()
+
+You can see in the above section that my temperature threshold was set to 70.0 and the timestamp was set to (60*15) or 15 minutes.
+ You can change those to whatever you like/need.
+ I also noticed that every little bit I'd see an abnormally high temperature reading so I set the script to only send a notice when
+ there are two or more occurrences in a 15 minute window. You will need to enter the appropriate usernames, etc. to get this working for your purposes.
